@@ -1,5 +1,5 @@
 from typing import Tuple, List
-from thinc.types import Ints1d, Ints2d, Floats2d, Floats3d, FloatsXd
+from thinc.types import Ints1d, Ints2d, Floats1d, Floats2d, Floats3d, FloatsXd
 from thinc.api import Model
 from thinc.util import to_categorical
 
@@ -53,7 +53,7 @@ def coref_loss(
 ) -> Floats2d:
     """
     Compute the negative marginal log-likelihood loss
-    and it's gradient.
+    and it's gradient for the coreference-scorer.
     """
     xp = model.ops.xp
     pair_mask = xp.arange(scores.shape[0])
@@ -83,7 +83,7 @@ def span_loss(
     ends: Ints1d
 ) -> Tuple[float, Floats3d]:
     """
-    Compute the sum of categorical-cross entropy loss
+    Compute the sum of categorical-cross entropy losses
     for the span-start and span-end scores and the
     corresponding gradient.
     """
@@ -97,5 +97,19 @@ def span_loss(
     start_grads = (start_probs - start_targets)
     end_grads = (end_probs - end_targets)
     grads = model.ops.xp.stack((start_grads, end_grads), axis=2)
+    loss = float((grads ** 2).sum())
+    return loss, grads
+
+
+def mention_loss(
+    model: Model,
+    mention_scores: Floats1d,
+    mention_labels: Ints1d
+):
+    """
+    Loss function for the mention detector.
+    """
+    mention_probs = model.ops.sigmoid(mention_scores)
+    grads = mention_probs - mention_labels
     loss = float((grads ** 2).sum())
     return loss, grads
