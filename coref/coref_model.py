@@ -54,14 +54,13 @@ class CorefScorer(torch.nn.Module):
             bert_emb,
             bert_emb,
             2,
-            dropout_rate,
-            roughk
+            dropout_rate
         ).to(device)
-        # self.rough_scorer = RoughScorer(
-        #     bert_emb,
-        #    dropout_rate,
-        #     roughk
-        # ).to(device)
+        self.rough_scorer = RoughScorer(
+             bert_emb,
+             dropout_rate,
+             roughk
+         ).to(device)
         self.pw = DistancePairwiseEncoder(
             dist_emb_size,
             dropout_rate
@@ -95,11 +94,15 @@ class CorefScorer(torch.nn.Module):
         words, _ = self.lstm(word_features)
         words = words.squeeze()
         words = self.dropout(words)
-        top_rough_scores, top_indices = self.mention_detector(words)
+        # meniton_scores        [n_words, 1]
+        # mention_scores_ij     [n_words, n_words]
+        mention_scores = self.mention_detector(words)
+        mention_scores_ij = self.mention_detector.scores2ij(mention_scores)
+        mention_scores_ij = mention_scores_ij[:, :self.roughk]
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
         # top_indices       [n_words, n_ants]
-        # top_rough_scores, top_indices = self.rough_scorer(words)
+        top_rough_scores, top_indices = self.rough_scorer(words)
         # Get pairwise features [n_words, n_ants, n_pw_features]
         pw = self.pw(top_indices)
         batch_size = self.batch_size
@@ -118,7 +121,6 @@ class CorefScorer(torch.nn.Module):
                 top_rough_scores_batch=top_rough_scores_batch
             )
             a_scores_lst.append(a_scores_batch)
-
         coref_scores = torch.cat(a_scores_lst, dim=0)
-        # coref_scores += add_dummy(mention_scores)
-        return coref_scores, top_indices
+        coref_scores += add_dummy(mention_scores_ij)
+        return coref_scores, mention_scores, top_indices
