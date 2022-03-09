@@ -1,4 +1,5 @@
 import torch
+from typing import Optional
 
 
 class MentionDetector(torch.nn.Module):
@@ -8,7 +9,7 @@ class MentionDetector(torch.nn.Module):
         hidden_size: int,
         n_layers: int,
         dropout_rate: float,
-        k: int
+        k: Optional[int] = None
     ):
         super().__init__()
         layers = []
@@ -22,17 +23,17 @@ class MentionDetector(torch.nn.Module):
         self.k = k
 
     def forward(self, mentions):
-        N = mentions.shape[0]
+        mention_scores = self.net(mentions)
+        return mention_scores
+
+    def scores2ij(self, scores):
+        N = scores.shape[0]
         pair_mask = torch.arange(N)
         pair_mask = pair_mask.unsqueeze(1) - pair_mask.unsqueeze(0)
         pair_mask = torch.log((pair_mask > 0).to(torch.float))
-        pair_mask = pair_mask.to(mentions.device)
-        mention_scores = self.net(mentions)
-        mention_scores = mention_scores.squeeze()
-        scores_tiled = mention_scores.tile((N, 1))
+        pair_mask = pair_mask.to(scores.device)
+        scores = scores.squeeze()
+        scores_tiled = scores.tile((N, 1))
         scores_ij = scores_tiled + scores_tiled.T
         scores_ij += pair_mask
-        top_scores, indices = torch.topk(scores_ij,
-                                         k=min(self.k, len(scores_ij)),
-                                         dim=1, sorted=False)
-        return top_scores, indices
+        return scores_ij
