@@ -35,18 +35,25 @@ def convert_coref_scorer_outputs(
     is_train: bool
 ):
     _, outputs = inputs_outputs
-    scores, indices = outputs
+    coref_scores, mention_scores, indices = outputs
 
-    def convert_for_torch_backward(dY: Floats2d) -> ArgsKwargs:
-        dY_t = xp2torch(dY)
+    def convert_for_torch_backward(
+        dY: Tuple[Floats2d, Floats2d]
+    ) -> ArgsKwargs:
+        dY_coref, dY_mention = xp2torch(dY[0]), xp2torch(dY[1])
         return ArgsKwargs(
-            args=([scores],),
-            kwargs={"grad_tensors": [dY_t]},
+            args=([coref_scores],),
+            kwargs={"grad_tensors": [dY_coref, dY_mention]},
         )
 
-    scores_xp = torch2xp(scores)
+    coref_scores_xp = torch2xp(coref_scores)
+    mention_scores_xp = torch2xp(mention_scores.squeeze())
     indices_xp = torch2xp(indices)
-    return (scores_xp, indices_xp), convert_for_torch_backward
+    return (
+        coref_scores_xp,
+        mention_scores_xp,
+        indices_xp
+    ), convert_for_torch_backward
 
 
 def convert_span_predictor_inputs(
@@ -72,26 +79,25 @@ def spaCyRoBERTa(
     )
 
 
-
-
 def doc2tensors(
     xp,
     doc: spacy.tokens.Doc
 ) -> Tuple[Ints1d, Ints1d, Ints1d, Ints1d, Ints1d]:
     sent_ids = [token._.sent_i for token in doc]
     cluster_ids = [token._.cluster_id for token in doc]
+    mention_labels = [token._.is_head for token in doc]
     head2span = sorted(doc._.coref_head2span)
-
     if not head2span:
         heads, starts, ends = [], [], []
     else:
         heads, starts, ends = zip(*head2span)
     sent_ids = xp.asarray(sent_ids)
     cluster_ids = xp.asarray(cluster_ids)
+    mention_labels = xp.asarray(mention_labels)
     heads = xp.asarray(heads)
     starts = xp.asarray(starts)
     ends = xp.asarray(ends) - 1
-    return sent_ids, cluster_ids, heads, starts, ends
+    return sent_ids, cluster_ids, mention_labels, heads, starts, ends
 
 
 def configure_pytorch_modules(config):
