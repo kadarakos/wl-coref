@@ -41,8 +41,9 @@ def convert_coref_scorer_outputs(
         dY: Tuple[Floats2d, Floats2d]
     ) -> ArgsKwargs:
         dY_coref, dY_mention = xp2torch(dY[0]), xp2torch(dY[1])
+        dY_mention = dY_mention.unsqueeze(dim=1)
         return ArgsKwargs(
-            args=([coref_scores],),
+            args=([coref_scores, mention_scores],),
             kwargs={"grad_tensors": [dY_coref, dY_mention]},
         )
 

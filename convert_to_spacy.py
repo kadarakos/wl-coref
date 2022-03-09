@@ -98,7 +98,7 @@ Token.set_extension('sent_i', default=None)
 # Mention clusters on word-level (span heads)
 Token.set_extension('coref_cluster_i', default=None)
 Token.set_extension('cluster_id', getter=_get_cluster_id)
-Token.set_extension('is_head', default=False)
+Token.set_extension('is_head', default=0.0)
 Doc.set_extension(
     "word_clusters",
     getter=_get_word_clusters,
@@ -136,7 +136,7 @@ if __name__ == "__main__":
                     for position in cluster:
                         token = spacy_doc[position]
                         token._.coref_cluster_i = i
-                        token._.is_head = True
+                        token._.is_head = 1.0
                 mention_spans = []
                 for i, cluster in enumerate(doc['span_clusters']):
                     for start, end in cluster:
