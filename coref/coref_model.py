@@ -1,10 +1,11 @@
 from typing import List, Tuple
 
 import torch
-
 from coref.anaphoricity_scorer import AnaphoricityScorer
 from coref.pairwise_encoder import DistancePairwiseEncoder
 from coref.rough_scorer import RoughScorer
+from coref.mention_detector import MentionDetector
+from coref.utils import add_dummy
 
 
 class CorefScorer(torch.nn.Module):
@@ -41,33 +42,44 @@ class CorefScorer(torch.nn.Module):
             epochs_trained (int): the number of epochs finished
                 (useful for warm start)
         """
-        # device, dist_emb_size, hidden_size, n_layers, dropout_rate
-        self.pw = DistancePairwiseEncoder(dist_emb_size, dropout_rate).to(device)
+        # TODO don't hardcode tok2vec size
         bert_emb = 1024
-        pair_emb = bert_emb * 3 + self.pw.shape
-        self.a_scorer = AnaphoricityScorer(
-            pair_emb,
-            hidden_size,
-            n_layers,
-            dropout_rate
-        ).to(device)
+        self.roughk = roughk
         self.lstm = torch.nn.LSTM(
             input_size=bert_emb,
             hidden_size=bert_emb,
             batch_first=True,
-        )
-        self.dropout = torch.nn.Dropout(dropout_rate)
-        self.rough_scorer = RoughScorer(
+        ).to(device)
+        self.mention_detector = MentionDetector(
             bert_emb,
+            bert_emb,
+            2,
             dropout_rate,
             roughk
         ).to(device)
+        # self.rough_scorer = RoughScorer(
+        #     bert_emb,
+        #    dropout_rate,
+        #     roughk
+        # ).to(device)
+        self.pw = DistancePairwiseEncoder(
+            dist_emb_size,
+            dropout_rate
+        ).to(device)
+        pair_emb = bert_emb * 3 + self.pw.shape
+        self.a_scorer = AnaphoricityScorer(
+           pair_emb,
+           hidden_size,
+           n_layers,
+           dropout_rate
+        ).to(device)
+        self.dropout = torch.nn.Dropout(dropout_rate)
         self.batch_size = batch_size
 
     def forward(
         self,
         word_features: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         This is a massive method, but it made sense to me to not split it into
         several ones to let one see the data flow.
@@ -83,10 +95,11 @@ class CorefScorer(torch.nn.Module):
         words, _ = self.lstm(word_features)
         words = words.squeeze()
         words = self.dropout(words)
+        top_rough_scores, top_indices = self.mention_detector(words)
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
         # top_indices       [n_words, n_ants]
-        top_rough_scores, top_indices = self.rough_scorer(words)
+        # top_rough_scores, top_indices = self.rough_scorer(words)
         # Get pairwise features [n_words, n_ants, n_pw_features]
         pw = self.pw(top_indices)
         batch_size = self.batch_size
@@ -107,4 +120,5 @@ class CorefScorer(torch.nn.Module):
             a_scores_lst.append(a_scores_batch)
 
         coref_scores = torch.cat(a_scores_lst, dim=0)
+        # coref_scores += add_dummy(mention_scores)
         return coref_scores, top_indices

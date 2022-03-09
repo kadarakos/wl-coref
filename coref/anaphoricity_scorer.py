@@ -96,10 +96,33 @@ class AnaphoricityScorer(torch.nn.Module):
         """
         emb_size = mentions_batch.shape[1]
         n_ants = pw_batch.shape[1]
-
         a_mentions = mentions_batch.unsqueeze(1).expand(-1, n_ants, emb_size)
         b_mentions = all_mentions[top_indices_batch]
         similarity = a_mentions * b_mentions
 
         out = torch.cat((a_mentions, b_mentions, similarity, pw_batch), dim=2)
         return out
+
+
+class BiAffineScorer:
+    def __init__(
+        self,
+        in_features: int,
+        hidden_size: int,
+        dropout_rate: float,
+    ):
+        super().__init__()
+
+        self.anaphora = torch.nn.Linear(in_features, hidden_size)
+        self.mention = torch.nn.Linear(in_features, hidden_size)
+        self.bilinear = torch.nn.Bilinear(hidden_size, hidden_size, 1)
+        self.activation = torch.nn.LeakyReLU()
+        self._dropout = torch.nn.Dropout(dropout_rate)
+        torch.nn.init.xavier_uniform_(self.bilinear.weight)
+
+    def forward(self, x: torch.Tensor, heads: torch.Tensor):
+        # Create representations of tokens as heads and dependents.
+        head = self._dropout(self.activation(self.head(x[heads.long()])))
+        dependent = self._dropout(self.activation(self.dependent(x)))
+
+        logits = self.bilinear(head, dependent)
