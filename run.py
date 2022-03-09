@@ -19,7 +19,7 @@ from coref.thinc_funcs import configure_pytorch_modules, doc2tensors
 from coref.thinc_funcs import spaCyRoBERTa
 from coref.thinc_funcs import _clusterize, predict_span_clusters
 from coref.thinc_funcs import load_state, save_state
-from coref.thinc_loss import coref_loss, span_loss
+from coref.thinc_loss import coref_loss, span_loss, mention_loss
 from convert_to_spacy import load_spacy_data
 
 
@@ -41,20 +41,23 @@ def train(
     for epoch in range(model.attrs['epochs_trained'], config.train_epochs):
         running_c_loss = 0.0
         running_s_loss = 0.0
+        running_m_loss = 0.0
         random.shuffle(docs_ids)
         pbar = tqdm.tqdm(docs_ids, unit="docs", ncols=0)
         for doc_id in pbar:
             doc = docs[doc_id]
             # Get data for CorefScorer
-            sent_ids, cluster_ids, heads, starts, ends = doc2tensors(
+            sent_ids, cluster_ids, mention_labels, heads, starts, ends = doc2tensors(
                 model.ops.xp,
                 doc
             )
             word_features, _ = encoder([doc], False)
             # Run CorefScorer
-            (coref_scores, top_indices), backprop = model.begin_update(
-                word_features[0]
-            )
+            (
+                coref_scores,
+                mention_scores,
+                top_indices
+            ), backprop = model.begin_update(word_features[0])
             # Compute coref loss
             c_loss, c_grads = coref_loss(
                 model,
@@ -62,8 +65,13 @@ def train(
                 coref_scores,
                 top_indices
             )
+            m_loss, m_grads = mention_loss(
+                model,
+                mention_scores,
+                mention_labels
+            )
             # Update CorefScorer
-            backprop(c_grads)
+            backprop((c_grads, m_grads))
             model.finish_update(optimizer)
             # Get data for SpanPredictor
             # (heads, starts, ends), _ = span_provider(doc, False)
@@ -89,15 +97,18 @@ def train(
 
             running_c_loss += c_loss
             running_s_loss += s_loss
+            running_m_loss += m_loss
 
             del coref_scores
             del top_indices
+            del m_loss
 
             pbar.set_description(
                 f"Epoch {epoch + 1}:"
                 f" {doc._.document_id:26}"
                 f" c_loss: {running_c_loss / (pbar.n + 1):<.5f}"
                 f" s_loss: {running_s_loss / (pbar.n + 1):<.5f}"
+                f" m_loss: {running_m_loss / (pbar.n + 1):<.5f}"
             )
 
         model.attrs['epochs_trained'] += 1
@@ -138,14 +149,14 @@ def evaluate(
     pbar = tqdm.tqdm(docs, unit="docs", ncols=0)
     for i, doc in enumerate(pbar):
         doc = docs[i]
-        sent_ids, cluster_ids, heads, starts, ends = doc2tensors(
+        sent_ids, cluster_ids, mention_labels, heads, starts, ends = doc2tensors(
             model.ops.xp,
             doc
         )
         word_features, _ = encoder([doc], False)
         # Get data for SpanPredictor
         # Run CorefScorer
-        coref_scores, top_indices = model.predict(word_features[0])
+        coref_scores, mention_scores, top_indices = model.predict(word_features[0])
         # Compute coreference loss
         c_loss, c_grads = coref_loss(
             model,
