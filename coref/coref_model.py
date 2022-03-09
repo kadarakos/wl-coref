@@ -97,8 +97,6 @@ class CorefScorer(torch.nn.Module):
         # meniton_scores        [n_words, 1]
         # mention_scores_ij     [n_words, n_words]
         mention_scores = self.mention_detector(words)
-        mention_scores_ij = self.mention_detector.scores2ij(mention_scores)
-        mention_scores_ij = mention_scores_ij[:, :self.roughk]
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
         # top_indices       [n_words, n_ants]
@@ -122,5 +120,4 @@ class CorefScorer(torch.nn.Module):
             )
             a_scores_lst.append(a_scores_batch)
         coref_scores = torch.cat(a_scores_lst, dim=0)
-        coref_scores += add_dummy(mention_scores_ij)
         return coref_scores, mention_scores, top_indices
