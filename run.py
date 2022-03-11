@@ -14,10 +14,11 @@ from coref.cluster_checker import ClusterChecker
 from coval import Evaluator, get_cluster_info, b_cubed, muc, ceafe, lea
 from thinc.api import require_gpu
 from thinc.api import Adam
-from coref.utils import _load_config, prfscore
+from coref.utils import _load_config, prfscore, mergespans
 from coref.thinc_funcs import configure_pytorch_modules, doc2tensors
 from coref.thinc_funcs import spaCyRoBERTa, _clusterize
-from coref.thinc_funcs import detect_mention_heads, predict_span_clusters
+from coref.thinc_funcs import detect_mention_heads, detect_mention_spans
+from coref.thinc_funcs import predict_span_clusters
 from coref.thinc_funcs import load_state, save_state
 from coref.thinc_loss import coref_loss, span_loss, mention_loss
 from process_litbank import load_docs
@@ -206,6 +207,16 @@ def evaluate(
                 sent_ids,
                 word_features,
                 word_clusters
+            )
+            mention_pred_spans = detect_mention_spans(
+                mention_detector,
+                span_predictor,
+                sent_ids,
+                word_features
+            )
+            span_clusters = mergespans(
+                span_clusters,
+                mention_pred_spans
             )
             pred_starts = span_scores[:, :, 0].argmax(axis=1)
             pred_ends = span_scores[:, :, 1].argmax(axis=1)
