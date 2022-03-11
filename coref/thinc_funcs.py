@@ -152,26 +152,29 @@ def save_state(
                         f"coref-{config.section}"
                         f"_(e{model.attrs['epochs_trained']}_{time}).pt")
     mention_path = os.path.join(config.data_dir,
-                        f"coref-{config.section}"
+                        f"mention-{config.section}"
                         f"_(e{model.attrs['epochs_trained']}_{time}).pt")
     with model.use_params(optimizer.averages):
         model.to_disk(coref_path)
     with span_predictor.use_params(optimizer.averages):
         span_predictor.to_disk(span_path)
-    with span_predictor.use_params(optimizer.averages):
+    with mention_detector.use_params(optimizer.averages):
         mention_detector.to_disk(mention_path)
 
 
 def load_state(
     model,
     span_predictor,
+    mention_detector,
     config,
     coref_path,
     span_path,
+    mention_path
 ):
     """Deserialize CorefScorer and SpanPredictor."""
     model.from_disk(coref_path)
     span_predictor.from_disk(span_path)
+    mention_detector.from_disk(mention_path)
     return model, span_predictor
 
 
