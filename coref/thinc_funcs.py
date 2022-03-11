@@ -226,9 +226,10 @@ def detect_mention_spans(
     Mark spans that are potential mentions.
     """
     mentions = detect_mention_heads(mention_detector, words, threshold)
+    mentions = mentions[:, 0]
     span_scores = span_predictor.predict((sent_ids, words, mentions))
-    span_starts = span_scores[:, :, 0].argmax(axis=1)
-    span_ends = (span_scores[:, :, 1].argmax(axis=1) + 1)
+    span_starts = span_scores[:, :, 0].argmax(axis=1).tolist()
+    span_ends = (span_scores[:, :, 1].argmax(axis=1) + 1).tolist()
     spans = list(zip(span_starts, span_ends))
     return spans
 
