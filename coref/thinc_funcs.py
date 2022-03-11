@@ -4,7 +4,7 @@ import spacy
 from datetime import datetime
 from typing import Tuple, List
 
-from thinc.types import Floats2d, Ints1d, Ints2d
+from thinc.types import Floats2d, Floats3d, Ints1d, Ints2d
 from thinc.util import xp2torch, torch2xp
 from thinc.api import PyTorchWrapper, Model, reduce_mean
 from thinc.api import ArgsKwargs
@@ -14,6 +14,7 @@ from spacy_transformers.span_getters import configure_strided_spans
 from coref.utils import GraphNode
 from coref.coref_model import CorefScorer
 from coref.span_predictor import SpanPredictor
+from coref.mention_detector import MentionDetector
 
 
 # XXX this global nlp feels sketchy
@@ -35,24 +36,21 @@ def convert_coref_scorer_outputs(
     is_train: bool
 ):
     _, outputs = inputs_outputs
-    coref_scores, mention_scores, indices = outputs
+    coref_scores, indices = outputs
 
     def convert_for_torch_backward(
-        dY: Tuple[Floats2d, Floats2d]
+        dY: Floats2d
     ) -> ArgsKwargs:
-        dY_coref, dY_mention = xp2torch(dY[0]), xp2torch(dY[1])
-        dY_mention = dY_mention.unsqueeze(dim=1)
+        dY_coref = xp2torch(dY)
         return ArgsKwargs(
-            args=([coref_scores, mention_scores],),
-            kwargs={"grad_tensors": [dY_coref, dY_mention]},
+            args=([coref_scores]),
+            kwargs={"grad_tensors": [dY_coref]},
         )
 
     coref_scores_xp = torch2xp(coref_scores)
-    mention_scores_xp = torch2xp(mention_scores.squeeze())
     indices_xp = torch2xp(indices)
     return (
         coref_scores_xp,
-        mention_scores_xp,
         indices_xp
     ), convert_for_torch_backward
 
@@ -126,10 +124,23 @@ def configure_pytorch_modules(config):
         ),
         convert_inputs=convert_span_predictor_inputs
     )
-    return coref_scorer, span_predictor
+    mention_detector = PyTorchWrapper(
+        MentionDetector(
+            1024,
+            config.dropout_rate,
+            config.rough_k
+        )
+    )
+    return coref_scorer, span_predictor, mention_detector
 
 
-def save_state(model, span_predictor, optimizer, config):
+def save_state(
+        model,
+        span_predictor,
+        mention_detector,
+        optimizer,
+        config
+):
     """Serialize CorefScorer and SpanPredictor."""
     time = datetime.strftime(datetime.now(), "%Y.%m.%d_%H.%M")
     span_path = os.path.join(
@@ -140,10 +151,15 @@ def save_state(model, span_predictor, optimizer, config):
     coref_path = os.path.join(config.data_dir,
                         f"coref-{config.section}"
                         f"_(e{model.attrs['epochs_trained']}_{time}).pt")
+    mention_path = os.path.join(config.data_dir,
+                        f"coref-{config.section}"
+                        f"_(e{model.attrs['epochs_trained']}_{time}).pt")
     with model.use_params(optimizer.averages):
         model.to_disk(coref_path)
     with span_predictor.use_params(optimizer.averages):
         span_predictor.to_disk(span_path)
+    with span_predictor.use_params(optimizer.averages):
+        mention_detector.to_disk(mention_path)
 
 
 def load_state(
@@ -165,16 +181,6 @@ def predict_span_clusters(span_predictor: Model,
                           clusters: List[Ints1d]):
     """
     Predicts span clusters based on the word clusters.
-
-    Args:
-        doc (Doc): the document data
-        words (torch.Tensor): [n_words, emb_size] matrix containing
-            embeddings for each of the words in the text
-        clusters (List[List[int]]): a list of clusters where each cluster
-            is a list of word indices
-
-    Returns:
-        List[List[Span]]: span clusters
     """
     if not clusters:
         return []
@@ -192,6 +198,39 @@ def predict_span_clusters(span_predictor: Model,
 
     return [[head2span[head] for head in cluster]
             for cluster in clusters]
+
+
+def detect_mention_heads(
+    mention_detector: Model,
+    words: Floats2d,
+    threshold: float = 0.5
+) -> Ints1d:
+    """
+    Label which token could be a head of a mention.
+    """
+    ops = mention_detector.ops
+    mention_scores = mention_detector.predict(words)
+    mention_probs = ops.sigmoid(mention_scores)
+    mentions = ops.xp.argwhere(mention_probs > threshold)
+    return mentions
+
+
+def detect_mention_spans(
+    mention_detector: Model,
+    span_predictor: Model[Tuple[Ints1d, Floats2d, Ints1d], Floats3d],
+    sent_ids: Ints1d,
+    words: Floats2d,
+    threshold: float = 0.5
+) -> List[Tuple[int, int]]:
+    """
+    Mark spans that are potential mentions.
+    """
+    mentions = detect_mention_heads(mention_detector, words, threshold)
+    span_scores = span_predictor.predict((sent_ids, words, mentions))
+    span_starts = span_scores[:, :, 0].argmax(axis=1)
+    span_ends = (span_scores[:, :, 1].argmax(axis=1) + 1)
+    spans = list(zip(span_starts, span_ends))
+    return spans
 
 
 def _clusterize(
