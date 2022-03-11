@@ -1,13 +1,14 @@
 """ Contains functions not directly linked to coreference resolution """
 
-from typing import List, Set
-
+from typing import List, Set, Tuple
+from thinc.types import Ints1d
 import torch
 import toml
 
 from coref.config import Config
 
 EPSILON = 1e-7
+
 
 class GraphNode:
     def __init__(self, node_id: int):
@@ -50,3 +51,14 @@ def add_dummy(tensor: torch.Tensor, eps: bool = False):
         dummy = torch.full(shape, EPSILON, **kwargs)  # type: ignore
     output = torch.cat((dummy, tensor), dim=1)
     return output
+
+
+def prfscore(
+    pred: Ints1d,
+    gold: Ints1d
+) -> Tuple[float, float, float]:
+    tp = sum(pred == gold)
+    p = tp / sum(pred)
+    r = tp / sum(gold)
+    fscore = 2 * ((p * r) / (p + r))
+    return p, r, fscore
