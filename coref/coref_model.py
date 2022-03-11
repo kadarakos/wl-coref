@@ -4,7 +4,6 @@ import torch
 from coref.anaphoricity_scorer import AnaphoricityScorer
 from coref.pairwise_encoder import DistancePairwiseEncoder
 from coref.rough_scorer import RoughScorer
-from coref.mention_detector import MentionDetector
 from coref.utils import add_dummy
 
 
@@ -50,12 +49,6 @@ class CorefScorer(torch.nn.Module):
             hidden_size=bert_emb,
             batch_first=True,
         ).to(device)
-        self.mention_detector = MentionDetector(
-            bert_emb,
-            bert_emb,
-            2,
-            dropout_rate
-        ).to(device)
         self.rough_scorer = RoughScorer(
              bert_emb,
              dropout_rate,
@@ -94,9 +87,6 @@ class CorefScorer(torch.nn.Module):
         words, _ = self.lstm(word_features)
         words = words.squeeze()
         words = self.dropout(words)
-        # meniton_scores        [n_words, 1]
-        # mention_scores_ij     [n_words, n_words]
-        mention_scores = self.mention_detector(words)
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
         # top_indices       [n_words, n_ants]
@@ -120,4 +110,4 @@ class CorefScorer(torch.nn.Module):
             )
             a_scores_lst.append(a_scores_batch)
         coref_scores = torch.cat(a_scores_lst, dim=0)
-        return coref_scores, mention_scores, top_indices
+        return coref_scores, top_indices
