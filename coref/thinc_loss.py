@@ -109,7 +109,8 @@ def mention_loss(
     """
     Loss function for the mention detector.
     """
-    mention_probs = model.ops.sigmoid(mention_scores)
+    mention_probs = model.ops.sigmoid(mention_scores).squeeze()
     grads = mention_probs - mention_labels
+    grads = model.ops.xp.expand_dims(grads, axis=1)
     loss = float((grads ** 2).sum())
     return loss, grads
