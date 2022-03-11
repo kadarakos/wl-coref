@@ -6,24 +6,28 @@ class MentionDetector(torch.nn.Module):
     def __init__(
         self,
         input_size: int,
-        hidden_size: int,
-        n_layers: int,
         dropout_rate: float,
-        k: Optional[int] = None
+        k: Optional[int] = None,
+        n_layers: int = 2,
     ):
         super().__init__()
+        self.lstm = torch.nn.LSTM(
+            input_size,
+            input_size,
+            batch_first=True
+        )
         layers = []
         for i in range(n_layers):
-            layers.extend([torch.nn.Linear(hidden_size if i else input_size,
-                                           hidden_size),
+            layers.extend([torch.nn.Linear(input_size,
+                                           input_size),
                            torch.nn.LeakyReLU(),
                            torch.nn.Dropout(dropout_rate)])
-        layers.extend([torch.nn.Linear(hidden_size, 1)])
+        layers.extend([torch.nn.Linear(input_size, 1)])
         self.net = torch.nn.Sequential(*layers)
         self.k = k
 
-    def forward(self, mentions):
-        mention_scores = self.net(mentions)
+    def forward(self, word_features):
+        mention_scores = self.net(word_features)
         return mention_scores
 
     def scores2ij(self, scores):
