@@ -62,3 +62,15 @@ def prfscore(
     r = tp / sum(gold)
     fscore = 2 * ((p * r) / (p + r))
     return p, r, fscore
+
+
+def mergespans(
+        span_clusters,
+        mention_spans
+):
+    all_coref_spans = {span for cluster in span_clusters for span in cluster}
+    mentions_spans = set(mention_spans)
+    singletons = mentions_spans - all_coref_spans
+    for singleton in singletons:
+        span_clusters.append([singleton])
+    return span_clusters
